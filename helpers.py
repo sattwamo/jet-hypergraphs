@@ -36,13 +36,6 @@ def build_jet(particles, R=10):
 
 
 def build_full_lund_tree(jet):
-    """
-    Returns:
-      children      : dict[parent] = (left, right)
-      node_type     : "declustering" | "particle"
-      lund_features : dict[node_id] = [z, dR, kt, log1R, logkt]
-      hyperedges    : list of (parent, left, right)
-    """
 
     children = {}
     node_type = {}
@@ -79,7 +72,7 @@ def build_full_lund_tree(jet):
         lnm = np.float32(0.5 * np.log(abs((j1 + j2).m2())))
         
         try:
-            psi = np.float32(np.atan((j1.rap() - j2.rap()) / (j1.phi() - j2.phi())))
+            psi = np.float32(np.arctan2((j1.rap() - j2.rap()) , (j1.phi() - j2.phi())))
         except ZeroDivisionError:
             psi = 0
 
@@ -100,21 +93,16 @@ def build_full_lund_tree(jet):
 
 
 def build_pyg_hypergraph(root, children, node_type, lund_features, hyperedges, label):
-    """
-    Returns a PyG Data object
-    """
 
     num_nodes = max(
         max(p, l, r) for (p, l, r) in hyperedges
     ) + 1
 
-    # node features
     x = torch.zeros((num_nodes, 5), dtype=torch.float)
 
     for nid, feats in lund_features.items():
         x[nid] = torch.tensor(feats, dtype=torch.float)
 
-    # hyperedge incidence matrix
     incidence = []
     for h_id, (p, l, r) in enumerate(hyperedges):
         incidence.append([p, h_id])
@@ -149,15 +137,6 @@ def jet_json_to_hypergraph(particles, label, R=0.8):
         label
     )
 
-    # hyperedges = build_extended_hyperedges(children, node_type)
-
-    # return build_pyg_hypergraph_extended(
-    #     node_type,
-    #     lund_features,
-    #     hyperedges,
-    #     label
-    # )
-
 def load_json_file(filename, label):
     graphs = []
 
@@ -165,6 +144,100 @@ def load_json_file(filename, label):
         for line in tqdm(f, desc=f"Loading {filename}"):
             particles = json.loads(line)
             data = jet_json_to_hypergraph(particles, label)
+            graphs.append(data)
+
+    return graphs
+
+def get_descendants(node, children):
+
+    daughters = []
+    granddaughters = []
+
+    if node not in children:
+        return daughters, granddaughters
+
+    d1, d2 = children[node]
+    daughters.extend([d1, d2])
+
+    for d in (d1, d2):
+        if d in children:
+            gd1, gd2 = children[d]
+            granddaughters.extend([gd1, gd2])
+
+    return daughters, granddaughters
+
+def build_extended_hyperedges(children, node_type):
+    hyperedges = []
+
+    for node, ntype in node_type.items():
+
+        if ntype != "declustering":
+            continue
+
+        daughters, granddaughters = get_descendants(node, children)
+
+        members = [node] + daughters + granddaughters
+
+        members = list(set(members))
+
+        hyperedges.append(members)
+
+    return hyperedges
+
+def build_hyperedge_index_extended(hyperedges):
+    incidence = []
+
+    for h_id, nodes in enumerate(hyperedges):
+        for n in nodes:
+            incidence.append([n, h_id])
+
+    return torch.tensor(
+        incidence, dtype=torch.long
+    ).t().contiguous()
+
+def build_pyg_hypergraph_extended(
+    node_type,
+    lund_features,
+    hyperedges,
+    label
+):
+    num_nodes = len(node_type)
+
+    x = torch.zeros((num_nodes, 5), dtype=torch.float)
+
+    for nid, feats in lund_features.items():
+        x[nid] = torch.tensor(feats, dtype=torch.float)
+
+    hyperedge_index = build_hyperedge_index_extended(hyperedges)
+
+    return Data(
+        x=x,
+        hyperedge_index=hyperedge_index,
+        y=torch.tensor(label, dtype=torch.long)
+    )
+
+def jet_json_to_extended_hypergraph(particles, label, R=0.8):
+    jet = build_jet(particles, R)
+
+    root, children, node_type, lund_features, hyperedges = \
+        build_full_lund_tree(jet)
+
+    hyperedges = build_extended_hyperedges(children, node_type)
+
+    return build_pyg_hypergraph_extended(
+        node_type,
+        lund_features,
+        hyperedges,
+        label
+    )
+
+def load_extended_json_file(filename, label):
+    graphs = []
+
+    with open(filename, "r") as f:
+        for line in tqdm(f, desc=f"Loading {filename}"):
+            particles = json.loads(line)
+            data = jet_json_to_extended_hypergraph(particles, label)
             graphs.append(data)
 
     return graphs

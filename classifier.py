@@ -1,20 +1,3 @@
-# import json
-# import numpy as np
-# import fastjet as fj
-# import networkx as nx
-# from tqdm import tqdm
-# import matplotlib.pyplot as plt
-# from matplotlib.patches import Polygon
-# from sklearn.metrics import roc_auc_score, roc_curve
-
-
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# from torch_geometric.nn import HypergraphConv, global_mean_pool
-# from torch_geometric.data import Data, Dataset
-# from torch_geometric.loader import DataLoader
-
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import HypergraphConv, global_mean_pool
